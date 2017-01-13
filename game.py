@@ -69,7 +69,7 @@ class FlappyBirdDeepQNetwork:
 
         self.env = gym.make('FlappyBird-v0')
         out_dir = '/tmp/random-agent-results'
-        self.env.monitor.start(out_dir, force=True, write_upon_reset=True)
+        self.env.monitor.start(out_dir, force=True, write_upon_reset=True, video_callable=lambda count: True)
 
     def run(self, episode_count=1000, learning_rate=0.5, training=False):
         for episode_idx in range(0, episode_count):
@@ -130,18 +130,18 @@ class FlappyBirdDeepQNetwork:
                             q_values_after_action = self.state_prediction_nn.predict(
                                 x=new_state.reshape(1, observation_width * observation_height), batch_size=1)
                             best_q_value_after_action = np.max(q_values_after_action)
-                            y = np.zeros((1, 2))  # only 2 possible actions
+
+                            training_q_values = np.zeros((1, 2))  # only 2 possible actions
                             for value_idx in range(0, len(q_values_before_action)):
-                                y[value_idx] = q_values_before_action[value_idx]
+                                training_q_values[value_idx] = q_values_before_action[value_idx]
 
-                            if reward != self.dead_reward:
-                                update = learning_rate * (reward + (self.discount_factor * best_q_value_after_action))
-                            else:
-                                update = reward
+                            output_update = learning_rate * (reward + (self.discount_factor * best_q_value_after_action))
 
-                            y[0][action] = update
+                            training_q_values[0][action] = output_update
+                            training_q_values[0][not action] = 0
+
                             nn_training_batch_data.append(old_state.reshape(observation_width * observation_height, ))
-                            nn_training_batch_labels.append(y.reshape(2, ))
+                            nn_training_batch_labels.append(training_q_values.reshape(2, ))
 
                         nn_training_batch_data = np.array(nn_training_batch_data)
                         nn_training_batch_labels = np.array(nn_training_batch_labels)
@@ -188,7 +188,7 @@ class FlappyBirdDeepQNetwork:
         nn_hidden_layer = Dense(
             init='lecun_uniform',
             output_dim=nn_output_layer_size,
-            activation='linear'
+            activation='linear'  # Pass value along -> f(x) = x
         )
 
         self.LOG.info("Adding layer to neural network: output_size: {o}"
@@ -223,11 +223,11 @@ class FlappyBirdDeepQNetwork:
 
             elif bird_action == Bird.Actions.FLAP:
                 self.LOG.info("Bird chose to FLAP!")
-                return self.env.step(0)  # lift the bird!
+                return self.env.step(1)  # lift the bird!
 
             elif bird_action == Bird.Actions.DO_NOTHING:
                 self.LOG.info("Bird chose to DO_NOTHING!")
-                return self.env.step(1)  # do not lift the bird
+                return self.env.step(0)  # do not lift the bird
         finally:
             self.env.render()
 
@@ -245,15 +245,15 @@ class FlappyBirdDeepQNetwork:
 
 if __name__ == "__main__":
     nn = FlappyBirdDeepQNetwork(
-        pipe_reward=25,
-        dead_reward=-100,
+        pipe_reward=50,
+        dead_reward=-1000,
         alive_reward=1,
-        discount_factor=0.95,  # a future reward is more important than a proximity reward, so closer to 1.
+        discount_factor=0.3,  # a future reward is more important than a proximity reward, so closer to 1.
         nn_batch_size=50,
         nn_train_epochs=5,
-        nn_image_resize_ratio=0.35,
-        nn_history_size=5,
-        nn_history_sample_size=5
+        nn_image_resize_ratio=0.25,
+        nn_history_size=100,
+        nn_history_sample_size=50
     )
     nn.run(
         episode_count=100,
